@@ -12,6 +12,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,6 +47,18 @@ class TypeSafeAutoConfigurationTest {
     @Test
     void staysOutOfTheWayWithoutApiKey() {
         runner.run(context -> assertFalse(context.containsBean("typeSafeClient")));
+    }
+
+    @Test
+    void treatsBlankApiKeyAsAbsent() {
+        runner.withPropertyValues("typesafe.api-key=").run(context -> {
+            assertNull(context.getStartupFailure());
+            assertFalse(context.containsBean("typeSafeClient"));
+        });
+        runner.withPropertyValues("typesafe.api-key=   ").run(context -> {
+            assertNull(context.getStartupFailure());
+            assertFalse(context.containsBean("typeSafeClient"));
+        });
     }
 
     @Test

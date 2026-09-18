@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - 2026-09-18
+
+- Starter: a blank `typesafe.api-key`, such as `${TYPESAFE_API_KEY:}` with the variable unset, no longer attempts to create the client and fail startup; it is treated as absent.
+- Starter documented in its own README; README examples use invented data.
+
 ## 0.1.0 - 2026-09-18
 
 Community library published under `io.github.premo-cloud`; not affiliated with TypeSafe AI.

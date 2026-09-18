@@ -10,7 +10,7 @@ Compiled against Spring Boot 3.1 and Java 17. Works with any Spring Boot 3.x; Sp
 Gradle:
 
 ```kotlin
-implementation("io.github.premo-cloud:typesafe-sdk-spring-boot-starter:0.1.0")
+implementation("io.github.premo-cloud:typesafe-sdk-spring-boot-starter:0.1.1")
 ```
 
 Maven:
@@ -19,7 +19,7 @@ Maven:
 <dependency>
   <groupId>io.github.premo-cloud</groupId>
   <artifactId>typesafe-sdk-spring-boot-starter</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
@@ -36,7 +36,7 @@ Spring maps `TYPESAFE_API_KEY` onto `typesafe.api-key` automatically. The same h
 
 | Property | Environment variable | Default | Purpose |
 |---|---|---|---|
-| `typesafe.api-key` | `TYPESAFE_API_KEY` | none, required | Bearer token. The bean is created only when this is set. |
+| `typesafe.api-key` | `TYPESAFE_API_KEY` | none, required | Bearer token. The bean is created only when this is non-blank, so `${TYPESAFE_API_KEY:}` is safe on machines without the variable. |
 | `typesafe.base-url` | `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` | API root. |
 | `typesafe.default-model` | `TYPESAFE_DEFAULT_MODEL` | `jev-latest` | Model for requests that do not name one. |
 | `typesafe.timeout` | `TYPESAFE_TIMEOUT` | `10s` | Per-attempt timeout, as a Spring duration such as `30s` or `PT1M`. |
