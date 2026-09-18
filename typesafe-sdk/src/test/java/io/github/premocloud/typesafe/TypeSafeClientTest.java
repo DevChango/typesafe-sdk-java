@@ -1,0 +1,294 @@
+package io.github.premocloud.typesafe;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class TypeSafeClientTest {
+
+    private static final String API_KEY = "apik-test";
+
+    private static final String RESPONSE_JSON = """
+            {
+              "model": "jev-1.13.0",
+              "answers": {
+                "is_phishing": {"type": "noul", "noul": 0.93},
+                "spam_category": {
+                  "type": "choice",
+                  "choice": "PHISHING",
+                  "probabilities": {"PHISHING": 0.9, "MARKETING": 0.1},
+                  "confidence": 0.88
+                },
+                "urgency": {
+                  "type": "score",
+                  "score": 1.7,
+                  "confidence": 0.61,
+                  "legend": {"0": "none", "1": "soft", "2": "threatening"},
+                  "probabilities": {"0": 0.0, "1": 0.3, "2": 0.7},
+                  "some_future_field": true
+                }
+              },
+              "usage": {"input_tokens": 312, "output_tokens": 48},
+              "some_future_top_level_field": {}
+            }
+            """;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private StubTypeSafeServer server;
+    private TypeSafeClient client;
+
+    @BeforeEach
+    void setUp() throws IOException {
+        server = new StubTypeSafeServer();
+        client = TypeSafeClient.builder().apiKey(API_KEY).baseUrl(server.baseUrl() + "/").timeout(Duration.ofSeconds(5))
+                .retryPolicy(RetryPolicy.none()).build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        server.close();
+    }
+
+    @Test
+    void systemOnePostsBearerAuthenticatedJsonAndReturnsTypedAnswers() throws Exception {
+        server.reply(200, RESPONSE_JSON);
+
+        TypeSafeResponse response = client.systemOne(spamRequest());
+
+        StubTypeSafeServer.Recorded recorded = server.recorded().get(0);
+        assertEquals("POST", recorded.method());
+        assertEquals("/v1/systemone", recorded.path());
+        assertEquals("Bearer " + API_KEY, recorded.headers().getFirst("Authorization"));
+        assertEquals("application/json", recorded.headers().getFirst("Content-type"));
+        JsonNode sent = objectMapper.readTree(recorded.body());
+        assertEquals("jev-latest", sent.at("/model").asText());
+        assertEquals("URGENT", sent.at("/state/email/subject").asText());
+        assertEquals("noul", sent.at("/questions/is_phishing/type").asText());
+        assertEquals("Credential theft", sent.at("/questions/spam_category/criteria/PHISHING").asText());
+        assertEquals("threatening", sent.at("/questions/urgency/criteria/2").asText());
+
+        assertEquals("jev-1.13.0", response.model());
+        assertEquals(0.93, response.noul("is_phishing"));
+        ChoiceAnswer category = response.choice("spam_category");
+        assertEquals("PHISHING", category.choice());
+        assertEquals(0.9, category.probabilities().get("PHISHING"));
+        assertEquals(0.88, category.confidence());
+        ScoreAnswer urgency = response.score("urgency");
+        assertEquals(1.7, urgency.score());
+        assertEquals("threatening", urgency.legend().get("2"));
+        assertEquals(312, response.usage().inputTokens());
+    }
+
+    @Test
+    void systemOneKeepsAnExplicitModel() throws Exception {
+        server.reply(200, RESPONSE_JSON);
+
+        client.systemOne(r -> r.state("text").model("jev-1.12.0").noul("q", n -> n.instructions("Yes?")));
+
+        assertEquals("jev-1.12.0", objectMapper.readTree(server.recorded().get(0).body()).at("/model").asText());
+    }
+
+    @Test
+    void systemOneAcceptsStateAndQuestionsDirectly() throws Exception {
+        server.reply(200, RESPONSE_JSON);
+
+        TypeSafeResponse response = client.systemOne(
+                Map.of("document", "I was charged twice."),
+                Map.of("spam_category", Choice.of("What is this about?", "PHISHING", "MARKETING")));
+
+        JsonNode sent = objectMapper.readTree(server.recorded().get(0).body());
+        assertEquals("I was charged twice.", sent.at("/state/document").asText());
+        assertTrue(sent.at("/questions/spam_category/criteria/PHISHING").isNull());
+        assertEquals("PHISHING", response.choices().get("spam_category").choice());
+        assertEquals(1, response.nouls().size());
+        assertEquals(1.7, response.scores().get("urgency").score());
+    }
+
+    @Test
+    void typedAccessorsRejectWrongPrimitiveAndUnknownKey() {
+        server.reply(200, RESPONSE_JSON);
+
+        TypeSafeResponse response = client.systemOne(spamRequest());
+
+        IllegalArgumentException wrongType = assertThrows(IllegalArgumentException.class, () -> response.noul("spam_category"));
+        assertTrue(wrongType.getMessage().contains("spam_category"));
+        IllegalArgumentException missing = assertThrows(IllegalArgumentException.class, () -> response.choice("nope"));
+        assertTrue(missing.getMessage().contains("nope"));
+    }
+
+    @Test
+    void sendsSdkIdentificationHeaders() {
+        server.reply(200, RESPONSE_JSON);
+
+        TypeSafeClient.builder().apiKey(API_KEY).baseUrl(server.baseUrl()).header("X-Team", "review").retryPolicy(RetryPolicy.none()).build()
+                .systemOne(spamRequest());
+
+        StubTypeSafeServer.Recorded recorded = server.recorded().get(0);
+        assertTrue(recorded.headers().getFirst("User-Agent").startsWith("typesafe-sdk/"));
+        assertTrue(recorded.headers().getFirst("X-TypeSafe-SDK").startsWith("typesafe-sdk/"));
+        assertTrue(recorded.headers().getFirst("X-TypeSafe-Runtime").startsWith("java/"));
+        assertEquals("review", recorded.headers().getFirst("X-Team"));
+        assertNull(recorded.headers().getFirst("X-TypeSafe-Retry-Count"));
+    }
+
+    @Test
+    void errorsMapToStatusSpecificExceptionsWithExtractedMessages() {
+        server.reply(401, "{\"error\":\"invalid api key\"}", Map.of("x-typesafe-request-id", "req_123"));
+
+        TypeSafeAuthenticationException exception = assertThrows(TypeSafeAuthenticationException.class, () -> client.systemOne(spamRequest()));
+
+        assertEquals(401, exception.status());
+        assertEquals("401 invalid api key", exception.getMessage());
+        assertEquals("{\"error\":\"invalid api key\"}", exception.body());
+        assertEquals("req_123", exception.requestId().orElseThrow());
+
+        server.reply(422, "{\"detail\":[{\"loc\":[\"body\",\"questions\",\"q\"],\"msg\":\"criteria required\"}]}");
+        assertEquals("422 questions.q: criteria required",
+                assertThrows(TypeSafeUnprocessableEntityException.class, () -> client.systemOne(spamRequest())).getMessage());
+
+        server.reply(400, "");
+        assertEquals("400 status code (no body)", assertThrows(TypeSafeBadRequestException.class, () -> client.systemOne(spamRequest())).getMessage());
+
+        server.reply(503, "upstream down");
+        assertEquals("503 upstream down", assertThrows(TypeSafeInternalServerException.class, () -> client.systemOne(spamRequest())).getMessage());
+
+        server.reply(418, "{\"message\":\"teapot\"}");
+        TypeSafeApiException generic = assertThrows(TypeSafeApiException.class, () -> client.systemOne(spamRequest()));
+        assertEquals(TypeSafeApiException.class, generic.getClass());
+        assertEquals("418 teapot", generic.getMessage());
+    }
+
+    @Test
+    void rateLimitExposesRetryAfter() {
+        server.reply(429, "{\"error\":\"slow down\"}", Map.of("retry-after", "7"));
+
+        TypeSafeRateLimitException exception = assertThrows(TypeSafeRateLimitException.class, () -> client.systemOne(spamRequest()));
+
+        assertEquals(Duration.ofSeconds(7), exception.retryAfter().orElseThrow());
+    }
+
+    @Test
+    void retriesRetryableStatusesWithRetryCountHeaderAndHonorsRetryAfterMs() {
+        TypeSafeClient retrying = TypeSafeClient.builder().apiKey(API_KEY).baseUrl(server.baseUrl())
+                .retryPolicy(RetryPolicy.of(r -> r.maxRetries(2).backoffInitial(Duration.ofMillis(1)).backoffMax(Duration.ofMillis(2)))).build();
+        server.reply(500, "{\"error\":\"boom\"}");
+        server.reply(429, "{\"error\":\"slow\"}", Map.of("retry-after-ms", "5"));
+        server.reply(200, RESPONSE_JSON);
+
+        TypeSafeResponse response = retrying.systemOne(spamRequest());
+
+        assertEquals(0.93, response.noul("is_phishing"));
+        assertEquals(3, server.recorded().size());
+        assertNull(server.recorded().get(0).headers().getFirst("X-TypeSafe-Retry-Count"));
+        assertEquals("1", server.recorded().get(1).headers().getFirst("X-TypeSafe-Retry-Count"));
+        assertEquals("2", server.recorded().get(2).headers().getFirst("X-TypeSafe-Retry-Count"));
+    }
+
+    @Test
+    void givesUpAfterMaxRetriesAndDoesNotRetryClientErrors() {
+        TypeSafeClient retrying = TypeSafeClient.builder().apiKey(API_KEY).baseUrl(server.baseUrl())
+                .retryPolicy(RetryPolicy.of(r -> r.maxRetries(1).backoffInitial(Duration.ofMillis(1)))).build();
+        server.reply(500, "one");
+        server.reply(500, "two");
+
+        assertEquals("500 two", assertThrows(TypeSafeInternalServerException.class, () -> retrying.systemOne(spamRequest())).getMessage());
+        assertEquals(2, server.recorded().size());
+
+        server.reply(400, "bad");
+        assertThrows(TypeSafeBadRequestException.class, () -> retrying.systemOne(spamRequest()));
+        assertEquals(3, server.recorded().size());
+    }
+
+    @Test
+    void timeoutsAndConnectionFailuresAreTyped() {
+        TypeSafeClient impatient = TypeSafeClient.builder().apiKey(API_KEY).baseUrl(server.baseUrl()).timeout(Duration.ofMillis(200))
+                .retryPolicy(RetryPolicy.none()).build();
+        server.replyAfter(1500, 200, RESPONSE_JSON);
+
+        TypeSafeTimeoutException timeout = assertThrows(TypeSafeTimeoutException.class, () -> impatient.systemOne(spamRequest()));
+        assertEquals(Duration.ofMillis(200), timeout.timeout());
+
+        TypeSafeClient unreachable = TypeSafeClient.builder().apiKey(API_KEY).baseUrl("http://127.0.0.1:1").retryPolicy(RetryPolicy.none()).build();
+        TypeSafeConnectionException connection = assertThrows(TypeSafeConnectionException.class, () -> unreachable.systemOne(spamRequest()));
+        assertEquals(TypeSafeConnectionException.class, connection.getClass());
+    }
+
+    @Test
+    void perCallOptionsOverrideTimeoutRetryAndHeaders() {
+        TypeSafeClient retrying = TypeSafeClient.builder().apiKey(API_KEY).baseUrl(server.baseUrl()).header("X-Team", "review")
+                .retryPolicy(RetryPolicy.of(r -> r.maxRetries(2).backoffInitial(Duration.ofMillis(1)))).build();
+        server.reply(500, "no retry please");
+
+        assertThrows(TypeSafeInternalServerException.class,
+                () -> retrying.systemOne(spamRequest(), RequestOptions.of(o -> o.maxRetries(0).header("X-Team", "spike").header("X-Trace", "t1"))));
+
+        assertEquals(1, server.recorded().size());
+        assertEquals("spike", server.recorded().get(0).headers().getFirst("X-Team"));
+        assertEquals("t1", server.recorded().get(0).headers().getFirst("X-Trace"));
+
+        server.replyAfter(1500, 200, RESPONSE_JSON);
+        TypeSafeTimeoutException timeout = assertThrows(TypeSafeTimeoutException.class,
+                () -> retrying.systemOne(spamRequest(), RequestOptions.of(o -> o.timeout(Duration.ofMillis(200)).maxRetries(0))));
+        assertEquals(Duration.ofMillis(200), timeout.timeout());
+
+        server.reply(200, "{\"models\":[]}");
+        assertEquals(List.of(), retrying.models().list(RequestOptions.of(o -> o.header("X-Trace", "t2"))));
+        assertEquals("t2", server.recorded().get(2).headers().getFirst("X-Trace"));
+        assertEquals("review", server.recorded().get(2).headers().getFirst("X-Team"));
+        assertThrows(IllegalArgumentException.class, () -> RequestOptions.of(o -> o.timeout(Duration.ZERO)));
+    }
+
+    @Test
+    void systemOneRejectsUnreadableBody() {
+        server.reply(200, "not json");
+
+        TypeSafeException exception = assertThrows(TypeSafeException.class, () -> client.systemOne(spamRequest()));
+
+        assertTrue(exception.getMessage().startsWith("Could not read response"));
+    }
+
+    @Test
+    void modelsListsAvailableModels() {
+        server.reply(200, "{\"models\":[{\"name\":\"jev-1.13.0\",\"description\":\"Jev\",\"release_date\":\"2026-09-01\",\"extra\":1}]}");
+
+        List<ModelCard> models = client.models().list();
+
+        assertEquals("GET", server.recorded().get(0).method());
+        assertEquals("/v1/models", server.recorded().get(0).path());
+        assertEquals(List.of(new ModelCard("jev-1.13.0", "Jev", "2026-09-01")), models);
+    }
+
+    @Test
+    void builderRequiresApiKeyAndValidatesTimeout() {
+        assertTrue(assertThrows(TypeSafeException.class, () -> TypeSafeClient.builder().apiKey(" ").build()).getMessage().contains("TYPESAFE_API_KEY"));
+        assertThrows(IllegalArgumentException.class, () -> TypeSafeClient.builder().timeout(Duration.ZERO));
+        assertEquals(RetryPolicy.DEFAULT, TypeSafeClient.builder().apiKey(API_KEY).build().retryPolicy());
+    }
+
+    private static TypeSafeRequest spamRequest() {
+        return TypeSafeRequest.of(r -> r
+                .state(Map.of("email", Map.of("subject", "URGENT")))
+                .noul("is_phishing", n -> n.instructions("Is `email` phishing?"))
+                .choice("spam_category", c -> c
+                        .instructions("Which category?")
+                        .option("PHISHING", "Credential theft")
+                        .option("MARKETING", "Promotions"))
+                .score("urgency", s -> s
+                        .instructions("How urgent?")
+                        .level("none")
+                        .level("soft")
+                        .level("threatening")));
+    }
+}
