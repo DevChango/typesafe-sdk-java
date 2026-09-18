@@ -6,6 +6,7 @@ First published release. A `0.1.0` tag was cut earlier the same day but never pu
 
 - Starter: a blank `typesafe.api-key`, such as `${TYPESAFE_API_KEY:}` with the variable unset, no longer attempts to create the client and fail startup; it is treated as absent.
 - Starter documented in its own README; README examples use invented data.
+
 Community library published under `io.github.premo-cloud`; not affiliated with TypeSafe AI.
 
 - `TypeSafeClient` over `java.net.http` with a builder, `fromEnvironment()`, and `systemOne` taking either `(state, questions)` as in the other SDKs, a `TypeSafeRequest`, or a request configurer.
