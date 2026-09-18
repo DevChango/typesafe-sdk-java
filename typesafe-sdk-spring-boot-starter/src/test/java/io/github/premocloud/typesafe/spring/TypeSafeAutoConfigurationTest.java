@@ -6,6 +6,9 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
+
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,6 +29,17 @@ class TypeSafeAutoConfigurationTest {
                     assertEquals("jev-1.12.0", properties.getDefaultModel());
                     assertEquals(5, properties.getTimeout().toSeconds());
                     assertEquals(TypeSafeClient.DEFAULT_BASE_URL, properties.getBaseUrl());
+                });
+    }
+
+    @Test
+    void environmentVariableAloneIsEnough() {
+        runner.withInitializer(context -> context.getEnvironment().getPropertySources()
+                        .addFirst(new SystemEnvironmentPropertySource("test-env", Map.of("TYPESAFE_API_KEY", "apik-from-env", "TYPESAFE_DEFAULT_MODEL", "jev-1.12.0"))))
+                .run(context -> {
+                    assertTrue(context.containsBean("typeSafeClient"));
+                    assertEquals("apik-from-env", context.getBean(TypeSafeProperties.class).getApiKey());
+                    assertEquals("jev-1.12.0", context.getBean(TypeSafeClient.class).defaultModel());
                 });
     }
 

@@ -162,14 +162,15 @@ TypeSafeClient client = TypeSafeClient.builder()
 
 ## Spring Boot
 
+Add `io.github.premo-cloud:typesafe-sdk-spring-boot-starter` and set one property:
+
 ```properties
 typesafe.api-key=${TYPESAFE_API_KEY}
-typesafe.default-model=jev-latest
-typesafe.timeout=30s
 ```
 
-The starter creates the bean only when `typesafe.api-key` is set, and backs off if you define your own `TypeSafeClient`.
-It reuses the application's `ObjectMapper` when one exists.
+A `TypeSafeClient` bean is then available for injection. The starter creates it only when the key is set, backs off if
+you define your own, and reuses the application's `ObjectMapper`. Properties, customization, testing, and troubleshooting
+are covered in the [starter README](typesafe-sdk-spring-boot-starter/README.md).
 
 ## Development
 
