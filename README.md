@@ -55,14 +55,14 @@ When a question needs structure, every type also takes a configurer, so nested r
 TypeSafeResponse response = client.systemOne(r -> r
         .state(Map.of(
                 "email", Map.of(
-                        "from", "noreply@newsletter-hub.net",
-                        "subject", "URGENT: Your account requires immediate verification",
-                        "body", "We have noticed unusual activity on your account..."),
-                "context", Map.of("custodian_domain", "acme-corp.com")))
+                        "from", "alerts@secure-notice.example",
+                        "subject", "Action required: confirm your account details",
+                        "body", "Your access will be suspended unless you confirm your details at the link below within 24 hours."),
+                "context", Map.of("recipient_domain", "example.com")))
         .noul("is_phishing", n -> n
                 .instructions("Does `email` attempt to trick the recipient into revealing credentials or payment details?")
                 .whenTrue(c -> c.what("Impersonates a trusted organization or demands urgent verification via a link")
-                        .examples("Verify your identity within 24 hours or your account will be suspended"))
+                        .examples("Confirm your details within 24 hours to avoid suspension"))
                 .whenFalse("A legitimate request from a known counterparty"))
         .choice("category", c -> c
                 .instructions("Which category best describes `email`?")
