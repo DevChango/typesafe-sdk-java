@@ -310,6 +310,21 @@ class TypeSafeClientTest {
     }
 
     @Test
+    void systemOneRejectsAnAnswerOfADifferentTypeThanTheQuestionAsked() {
+        server.reply(200, """
+                {"model": "jev-1.13.0", "answers": {
+                   "is_phishing": {"type": "choice", "choice": "PHISHING", "probabilities": {"PHISHING": 1.0}, "confidence": 1.0},
+                   "spam_category": {"type": "choice", "choice": "PHISHING", "probabilities": {"PHISHING": 1.0}, "confidence": 1.0},
+                   "urgency": {"type": "score", "score": 1.0, "probabilities": {"1": 1.0}, "confidence": 1.0, "legend": {"1": "x"}}},
+                 "usage": {"input_tokens": 1, "output_tokens": 1}}
+                """);
+
+        TypeSafeException exception = assertThrows(TypeSafeException.class, () -> client.systemOne(spamRequest()));
+
+        assertTrue(exception.getMessage().contains("is_phishing"), exception.getMessage());
+    }
+
+    @Test
     void systemOneRejectsUnreadableBody() {
         server.reply(200, "not json");
 

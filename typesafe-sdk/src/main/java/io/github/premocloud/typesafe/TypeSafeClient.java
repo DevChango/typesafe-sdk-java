@@ -132,14 +132,30 @@ public final class TypeSafeClient {
             throw new TypeSafeException("TypeSafe response has no answers");
         }
 
-        // Every question asked must come back answered; otherwise the gap only surfaces later, when the
-        // caller reads that key, as an IllegalArgumentException no catch of TypeSafeException would see.
-        Set<String> unanswered = new LinkedHashSet<>(resolved.questions().keySet());
-        unanswered.removeAll(response.answers().keySet());
+        // Every question asked must come back answered, and answered as its own type. Either gap otherwise
+        // surfaces later, when the caller reads that key, as an IllegalArgumentException no catch of
+        // TypeSafeException would see.
+        Set<String> unanswered = new LinkedHashSet<>();
+        Set<String> mistyped = new LinkedHashSet<>();
+
+        resolved.questions().forEach((id, question) -> {
+            TypeSafeAnswer answer = response.answers().get(id);
+
+            if (Objects.isNull(answer)) {
+                unanswered.add(id);
+            } else if (!expectedAnswer(question).isInstance(answer)) {
+                mistyped.add(id);
+            }
+        });
 
         if (!unanswered.isEmpty()) {
             throw new TypeSafeException("TypeSafe response is missing answers for %s; answered: %s"
                     .formatted(unanswered, response.answers().keySet()));
+        }
+
+        if (!mistyped.isEmpty()) {
+            throw new TypeSafeException("TypeSafe response answered %s with a different type than was asked"
+                    .formatted(mistyped));
         }
 
         return response;
@@ -233,6 +249,19 @@ public final class TypeSafeClient {
             Thread.currentThread().interrupt();
             throw new TypeSafeConnectionException("Interrupted while waiting to retry", e);
         }
+    }
+
+    /** The answer type the API must return for a question of this type. */
+    private static Class<? extends TypeSafeAnswer> expectedAnswer(TypeSafeQuestion question) {
+        if (question instanceof Noul) {
+            return NoulAnswer.class;
+        }
+
+        if (question instanceof Choice) {
+            return ChoiceAnswer.class;
+        }
+
+        return ScoreAnswer.class;
     }
 
     private <T> T deserialize(String body, Class<T> type) {
