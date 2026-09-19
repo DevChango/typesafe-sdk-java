@@ -95,7 +95,7 @@ class TypeSafeClientTest {
     void systemOneKeepsAnExplicitModel() throws Exception {
         server.reply(200, RESPONSE_JSON);
 
-        client.systemOne(r -> r.state("text").model("jev-1.12.0").noul("q", n -> n.instructions("Yes?")));
+        client.systemOne(r -> r.state("text").model("jev-1.12.0").noul("is_phishing", n -> n.instructions("Yes?")));
 
         assertEquals("jev-1.12.0", objectMapper.readTree(server.recorded().get(0).body()).at("/model").asText());
     }
@@ -295,6 +295,18 @@ class TypeSafeClientTest {
         TypeSafeException exception = assertThrows(TypeSafeException.class, () -> client.systemOne(spamRequest()));
 
         assertTrue(exception.getMessage().contains("score"), exception.getMessage());
+    }
+
+    @Test
+    void systemOneRejectsAResponseMissingAnAnswerForAQuestionThatWasAsked() {
+        server.reply(200, """
+                {"model": "jev-1.13.0", "answers": {"is_phishing": {"type": "noul", "noul": 0.93}},
+                 "usage": {"input_tokens": 1, "output_tokens": 1}}
+                """);
+
+        TypeSafeException exception = assertThrows(TypeSafeException.class, () -> client.systemOne(spamRequest()));
+
+        assertTrue(exception.getMessage().contains("spam_category"), exception.getMessage());
     }
 
     @Test

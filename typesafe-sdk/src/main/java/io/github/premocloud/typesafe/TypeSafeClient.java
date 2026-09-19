@@ -15,9 +15,11 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
@@ -128,6 +130,16 @@ public final class TypeSafeClient {
 
         if (Objects.isNull(response.answers())) {
             throw new TypeSafeException("TypeSafe response has no answers");
+        }
+
+        // Every question asked must come back answered; otherwise the gap only surfaces later, when the
+        // caller reads that key, as an IllegalArgumentException no catch of TypeSafeException would see.
+        Set<String> unanswered = new LinkedHashSet<>(resolved.questions().keySet());
+        unanswered.removeAll(response.answers().keySet());
+
+        if (!unanswered.isEmpty()) {
+            throw new TypeSafeException("TypeSafe response is missing answers for %s; answered: %s"
+                    .formatted(unanswered, response.answers().keySet()));
         }
 
         return response;
