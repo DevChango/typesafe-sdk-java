@@ -1,6 +1,8 @@
 package io.github.premocloud.typesafe;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Map;
 
@@ -17,4 +19,19 @@ public record ScoreAnswer(
         double confidence,
         Map<String, String> legend
 ) implements TypeSafeAnswer {
+
+    /** Jackson entry point: a score answer missing its score, probabilities, or confidence is malformed. */
+    @JsonCreator
+    ScoreAnswer(
+            @JsonProperty("score") Double score,
+            @JsonProperty("probabilities") Map<String, Double> probabilities,
+            @JsonProperty("confidence") Double confidence,
+            @JsonProperty("legend") Map<String, String> legend,
+            @JsonProperty("type") String ignoredType
+    ) {
+        this(TypeSafeAnswer.required(score, "score", "score").doubleValue(),
+                TypeSafeAnswer.required(probabilities, "score", "probabilities"),
+                TypeSafeAnswer.required(confidence, "score", "confidence").doubleValue(),
+                legend);
+    }
 }
