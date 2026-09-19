@@ -2,6 +2,7 @@ package io.github.premocloud.typesafe;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.Nullable;
 
@@ -14,9 +15,11 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
@@ -129,6 +132,32 @@ public final class TypeSafeClient {
             throw new TypeSafeException("TypeSafe response has no answers");
         }
 
+        // Every question asked must come back answered, and answered as its own type. Either gap otherwise
+        // surfaces later, when the caller reads that key, as an IllegalArgumentException no catch of
+        // TypeSafeException would see.
+        Set<String> unanswered = new LinkedHashSet<>();
+        Set<String> mistyped = new LinkedHashSet<>();
+
+        resolved.questions().forEach((id, question) -> {
+            TypeSafeAnswer answer = response.answers().get(id);
+
+            if (Objects.isNull(answer)) {
+                unanswered.add(id);
+            } else if (!expectedAnswer(question).isInstance(answer)) {
+                mistyped.add(id);
+            }
+        });
+
+        if (!unanswered.isEmpty()) {
+            throw new TypeSafeException("TypeSafe response is missing answers for %s; answered: %s"
+                    .formatted(unanswered, response.answers().keySet()));
+        }
+
+        if (!mistyped.isEmpty()) {
+            throw new TypeSafeException("TypeSafe response answered %s with a different type than was asked"
+                    .formatted(mistyped));
+        }
+
         return response;
     }
 
@@ -222,9 +251,25 @@ public final class TypeSafeClient {
         }
     }
 
+    /** The answer type the API must return for a question of this type. */
+    private static Class<? extends TypeSafeAnswer> expectedAnswer(TypeSafeQuestion question) {
+        if (question instanceof Noul) {
+            return NoulAnswer.class;
+        }
+
+        if (question instanceof Choice) {
+            return ChoiceAnswer.class;
+        }
+
+        return ScoreAnswer.class;
+    }
+
     private <T> T deserialize(String body, Class<T> type) {
         try {
             return objectMapper.readValue(body, type);
+        } catch (JsonMappingException e) {
+            // The path names the offending question, e.g. answers -> is_fraud, which the message alone does not.
+            throw new TypeSafeException("Could not read response at %s: %s".formatted(e.getPathReference(), e.getOriginalMessage()), e);
         } catch (JsonProcessingException e) {
             throw new TypeSafeException("Could not read response: " + e.getOriginalMessage(), e);
         }
