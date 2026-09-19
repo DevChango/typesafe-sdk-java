@@ -2,6 +2,7 @@ package io.github.premocloud.typesafe;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.Nullable;
 
@@ -225,6 +226,9 @@ public final class TypeSafeClient {
     private <T> T deserialize(String body, Class<T> type) {
         try {
             return objectMapper.readValue(body, type);
+        } catch (JsonMappingException e) {
+            // The path names the offending question, e.g. answers -> is_fraud, which the message alone does not.
+            throw new TypeSafeException("Could not read response at %s: %s".formatted(e.getPathReference(), e.getOriginalMessage()), e);
         } catch (JsonProcessingException e) {
             throw new TypeSafeException("Could not read response: " + e.getOriginalMessage(), e);
         }

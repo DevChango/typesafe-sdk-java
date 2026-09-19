@@ -1,6 +1,8 @@
 package io.github.premocloud.typesafe;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Map;
 
@@ -11,4 +13,17 @@ import java.util.Map;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ChoiceAnswer(String choice, Map<String, Double> probabilities, double confidence) implements TypeSafeAnswer {
+
+    /** Jackson entry point: a choice answer missing any of its fields is malformed. */
+    @JsonCreator
+    ChoiceAnswer(
+            @JsonProperty("choice") String choice,
+            @JsonProperty("probabilities") Map<String, Double> probabilities,
+            @JsonProperty("confidence") Double confidence,
+            @JsonProperty("type") String ignoredType
+    ) {
+        this(TypeSafeAnswer.required(choice, "choice", "choice"),
+                TypeSafeAnswer.required(probabilities, "choice", "probabilities"),
+                TypeSafeAnswer.required(confidence, "choice", "confidence").doubleValue());
+    }
 }

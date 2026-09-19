@@ -251,6 +251,53 @@ class TypeSafeClientTest {
     }
 
     @Test
+    void systemOneRejectsNoulAnswerMissingItsValue() {
+        server.reply(200, """
+                {"model": "jev-1.13.0", "answers": {"is_fraud": {"type": "noul"}}, "usage": {"input_tokens": 1, "output_tokens": 1}}
+                """);
+
+        TypeSafeException exception = assertThrows(TypeSafeException.class, () -> client.systemOne(spamRequest()));
+
+        assertTrue(exception.getMessage().contains("noul"), exception.getMessage());
+        assertTrue(exception.getMessage().contains("is_fraud"), exception.getMessage());
+    }
+
+    @Test
+    void systemOneRejectsNoulAnswerWithExplicitNullValue() {
+        server.reply(200, """
+                {"model": "jev-1.13.0", "answers": {"is_fraud": {"type": "noul", "noul": null}}, "usage": {"input_tokens": 1, "output_tokens": 1}}
+                """);
+
+        TypeSafeException exception = assertThrows(TypeSafeException.class, () -> client.systemOne(spamRequest()));
+
+        assertTrue(exception.getMessage().contains("noul"), exception.getMessage());
+    }
+
+    @Test
+    void systemOneRejectsChoiceAnswerMissingItsChoice() {
+        server.reply(200, """
+                {"model": "jev-1.13.0", "answers": {"category": {"type": "choice", "probabilities": {"a": 1.0}, "confidence": 1.0}},
+                 "usage": {"input_tokens": 1, "output_tokens": 1}}
+                """);
+
+        TypeSafeException exception = assertThrows(TypeSafeException.class, () -> client.systemOne(spamRequest()));
+
+        assertTrue(exception.getMessage().contains("choice"), exception.getMessage());
+    }
+
+    @Test
+    void systemOneRejectsScoreAnswerMissingItsScore() {
+        server.reply(200, """
+                {"model": "jev-1.13.0", "answers": {"urgency": {"type": "score", "probabilities": {"0": 1.0}, "confidence": 1.0, "legend": {"0": "calm"}}},
+                 "usage": {"input_tokens": 1, "output_tokens": 1}}
+                """);
+
+        TypeSafeException exception = assertThrows(TypeSafeException.class, () -> client.systemOne(spamRequest()));
+
+        assertTrue(exception.getMessage().contains("score"), exception.getMessage());
+    }
+
+    @Test
     void systemOneRejectsUnreadableBody() {
         server.reply(200, "not json");
 

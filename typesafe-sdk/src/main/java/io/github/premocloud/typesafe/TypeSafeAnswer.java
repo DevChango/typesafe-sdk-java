@@ -11,4 +11,13 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = ScoreAnswer.class, name = "score")
 })
 public sealed interface TypeSafeAnswer permits NoulAnswer, ChoiceAnswer, ScoreAnswer {
+
+    /** Rejects a missing or null answer field so a malformed response cannot read as a real value (0, null). */
+    static <T> T required(T value, String answerType, String field) {
+        if (value == null) {
+            throw new IllegalArgumentException("%s answer is missing '%s'".formatted(answerType, field));
+        }
+
+        return value;
+    }
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A response whose answer is missing a required field (`noul`, `choice`, `score`, `probabilities`, `confidence`), or has it as `null`, now fails `systemOne` with a `TypeSafeException` naming the question, instead of reading as `0.0` or `null` (#1).
+- Response parse errors name the JSON path of the offending element.
+
 ## 0.1.1 - 2026-09-18
 
 First published release. A `0.1.0` tag was cut earlier the same day but never published to Maven Central; its contents are listed here.
